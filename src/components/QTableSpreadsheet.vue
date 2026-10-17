@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, onUnmounted } from "vue";
+import { computed, onUnmounted, reactive, ref } from "vue";
+import type { CSSProperties } from "vue";
 import { QTable } from "quasar";
 import type { QTableProps } from "quasar";
 import type { QTableSpreadsheetColumn } from "../types/QTableSpreadsheet";
@@ -8,23 +9,106 @@ interface Props {
   rows: Record<string, unknown>[];
   columns: QTableSpreadsheetColumn[];
   rowKey?: QTableProps["rowKey"];
+  rowHeight?: number;
+  tableHeight?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   rowKey: "id",
+  rowHeight: 24,
+  tableHeight: "70vh",
 });
 
 const emit = defineEmits<{
-  (e: "resize-column", name: string, width: number): void;
+  (event: "resize-column", name: string, width: number): void;
 }>();
 
-const widths = ref<Record<string, number>>({});
-
+const INDEX_COLUMN_NAME = "__row_index__";
 const DUMMY_COLUMN_NAME = "__spreadsheet_dummy__";
 
+const widths = ref<Record<string, number>>({});
+const filterValues = reactive<Record<string, string>>({});
+
+const tableStyle = computed<CSSProperties>(() => ({
+  "--spreadsheet-row-height": `${props.rowHeight}px`,
+}));
+
+const filterColumns = computed(() =>
+  props.columns.filter((column) => column.hasFilter === true),
+);
+
+const hasFilterRow = computed(() => filterColumns.value.length > 0);
+
+const getColumnValue = (
+  column: QTableSpreadsheetColumn,
+  row: Record<string, unknown>,
+) => {
+  const field = column.field;
+
+  if (field === undefined) return undefined;
+  if (typeof field === "function") return field(row);
+
+  return field
+    .split(".")
+    .reduce<unknown>(
+      (value, key) =>
+        value != null && typeof value === "object"
+          ? (value as Record<string, unknown>)[key]
+          : undefined,
+      row,
+    );
+};
+
+const tableRows = computed(() => {
+  let rows = [...props.rows];
+
+  // 1. フィルタリング
+  rows = rows.filter((row) => {
+    for (const column of filterColumns.value) {
+      const keyword = (filterValues[column.name] ?? "")
+        .trim()
+        .toLocaleLowerCase();
+
+      if (!keyword) continue;
+
+      const value = getColumnValue(column, row);
+      const text = String(
+        column.format ? column.format(value, row) : (value ?? ""),
+      ).toLocaleLowerCase();
+
+      if (!text.includes(keyword)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  // 2. ソート（今後実装）
+
+  // 3. フィルタリング・ソート後の表示順に行番号を付与
+  return rows.map((row, index) => ({
+    ...row,
+    row_index: index + 1,
+  }));
+});
+
+const tableRowClassFn = (row: Record<string, unknown>) =>
+  Number(row.row_index) % 2 === 0 ? "spreadsheet-row-even" : "";
+
 const tableColumns = computed<QTableSpreadsheetColumn[]>(() => [
-  ...props.columns.map((col) => {
-    const width = widths.value[col.name] ?? col.width;
+  {
+    name: INDEX_COLUMN_NAME,
+    label: "",
+    field: "row_index",
+    align: "right",
+    sortable: false,
+    resizable: false,
+    classes: "col--index",
+    headerClasses: "col--index",
+  },
+  ...props.columns.map((column) => {
+    const width = widths.value[column.name] ?? column.width;
 
     const widthStyle =
       width != null
@@ -32,9 +116,10 @@ const tableColumns = computed<QTableSpreadsheetColumn[]>(() => [
         : "";
 
     return {
-      ...col,
-      style: [col.style, widthStyle].filter(Boolean).join(";"),
-      headerStyle: [col.headerStyle, widthStyle].filter(Boolean).join(";"),
+      ...column,
+      sortable: false,
+      style: [column.style, widthStyle].filter(Boolean).join(";"),
+      headerStyle: [column.headerStyle, widthStyle].filter(Boolean).join(";"),
     };
   }),
   {
@@ -44,12 +129,11 @@ const tableColumns = computed<QTableSpreadsheetColumn[]>(() => [
     align: "left",
     sortable: false,
     resizable: false,
-    style: "width: auto",
-    headerStyle: "width: auto",
     classes: "col--dummy",
     headerClasses: "col--dummy",
   },
 ]);
+
 let resizing:
   | {
       name: string;
@@ -58,13 +142,76 @@ let resizing:
     }
   | undefined;
 
-function stopResize() {
+const autoFitColumn = (event: MouseEvent, column: QTableSpreadsheetColumn) => {
+  const th = (event.currentTarget as HTMLElement).closest("th");
+  if (!th) return;
+
+  const table = th.closest("table");
+  if (!table) return;
+
+  const context = document.createElement("canvas").getContext("2d");
+  if (!context) return;
+
+  const headerFont = getComputedStyle(th).font;
+  const bodyCell = table.querySelector("tbody td");
+  const bodyFont = bodyCell ? getComputedStyle(bodyCell).font : headerFont;
+
+  context.font = headerFont;
+  let maxWidth = context.measureText(column.label).width;
+
+  context.font = bodyFont;
+
+  for (const row of tableRows.value) {
+    const value = getColumnValue(column, row);
+    const text = String(
+      column.format ? column.format(value, row) : (value ?? ""),
+    );
+
+    maxWidth = Math.max(maxWidth, context.measureText(text).width);
+  }
+
+  const width = Math.max(column.minWidth ?? 40, Math.ceil(maxWidth + 24));
+
+  widths.value[column.name] = width;
+  emit("resize-column", column.name, width);
+};
+
+const onPointerMove = (event: PointerEvent) => {
+  if (!resizing) return;
+
+  const column = props.columns.find((item) => item.name === resizing?.name);
+
+  const width = Math.max(
+    column?.minWidth ?? 40,
+    resizing.startWidth + event.clientX - resizing.startX,
+  );
+
+  widths.value[resizing.name] = width;
+};
+
+const stopResize = () => {
   window.removeEventListener("pointermove", onPointerMove);
   window.removeEventListener("pointerup", onPointerUp);
   window.removeEventListener("pointercancel", onPointerUp);
-}
+};
 
-function onPointerDown(event: PointerEvent, column: QTableSpreadsheetColumn) {
+const onPointerUp = () => {
+  if (resizing) {
+    const width = widths.value[resizing.name];
+
+    if (width !== undefined) {
+      emit("resize-column", resizing.name, width);
+    }
+  }
+
+  resizing = undefined;
+  stopResize();
+};
+
+const onPointerDown = (
+  event: PointerEvent,
+  column: QTableSpreadsheetColumn,
+) => {
   if (column.resizable === false) return;
 
   event.preventDefault();
@@ -82,72 +229,116 @@ function onPointerDown(event: PointerEvent, column: QTableSpreadsheetColumn) {
   window.addEventListener("pointermove", onPointerMove);
   window.addEventListener("pointerup", onPointerUp);
   window.addEventListener("pointercancel", onPointerUp);
-}
-
-function onPointerMove(event: PointerEvent) {
-  if (!resizing) return;
-
-  const width = Math.max(
-    40,
-    resizing.startWidth + event.clientX - resizing.startX,
-  );
-
-  widths.value[resizing.name] = width;
-}
-
-function onPointerUp() {
-  if (resizing) {
-    const width = widths.value[resizing.name];
-
-    if (width !== undefined) {
-      emit("resize-column", resizing.name, width);
-    }
-  }
-
-  resizing = undefined;
-  stopResize();
-}
+};
 
 onUnmounted(stopResize);
 </script>
 
 <template>
   <QTable
-    :rows="rows"
+    class="q-table-spreadsheet"
+    :rows="tableRows"
     :columns="tableColumns"
     :row-key="rowKey"
+    :style="tableStyle"
+    :table-style="{ maxHeight: tableHeight }"
+    :table-row-class-fn="tableRowClassFn"
+    :virtual-scroll-item-size="rowHeight"
+    :rows-per-page-options="[0]"
+    virtual-scroll
+    hide-bottom
+    dense
     separator="cell"
     flat
     bordered
   >
     <template #header="scope">
+      <!-- ヘッダ行 -->
       <q-tr :props="scope">
         <q-th
-          v-for="col in scope.cols"
-          :key="col.name"
+          v-for="column in scope.cols"
+          :key="column.name"
           :props="scope"
-          :style="col.headerStyle"
-          :class="['spreadsheet-header', col.headerClasses]"
+          :style="column.headerStyle"
+          :class="['spreadsheet-header', column.headerClasses]"
         >
-          <template v-if="col.name !== DUMMY_COLUMN_NAME">
-            {{ col.label }}
+          <template v-if="column.name !== DUMMY_COLUMN_NAME">
+            {{ column.label }}
 
             <div
-              v-if="col.resizable !== false"
+              v-if="column.resizable !== false"
               class="column-resizer"
-              @pointerdown="onPointerDown($event, col)"
+              @pointerdown="onPointerDown($event, column)"
+              @dblclick.stop="autoFitColumn($event, column)"
               @click.stop
             />
           </template>
         </q-th>
       </q-tr>
+
+      <!-- フィルタ行 -->
+      <q-tr v-if="hasFilterRow" :props="scope" class="spreadsheet-filter-row">
+        <q-th
+          v-for="column in scope.cols"
+          :key="column.name"
+          :props="scope"
+          :style="column.headerStyle"
+          :class="column.headerClasses"
+        >
+          <q-input
+            v-if="column.hasFilter"
+            v-model="filterValues[column.name]"
+            outlined
+            dense
+            clearable
+          />
+        </q-th>
+      </q-tr>
+    </template>
+
+    <!-- 行番号 -->
+    <template #body-cell-__row_index__="scope">
+      <q-td :props="scope" class="col--index">
+        {{ scope.row.row_index }}
+      </q-td>
     </template>
   </QTable>
 </template>
 
 <style scoped>
+.q-table-spreadsheet {
+  font-size: var(--spreadsheet-font-size, 0.75rem);
+  color: var(--spreadsheet-text-color, #212121);
+  background-color: var(--spreadsheet-row-bg, #fff);
+}
+
+.q-table-spreadsheet :deep(.q-table tbody tr) {
+  height: var(--spreadsheet-row-height, 24px);
+}
+
+.q-table-spreadsheet :deep(.q-table tbody td) {
+  height: var(--spreadsheet-row-height, 24px);
+  box-sizing: border-box;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+.q-table-spreadsheet :deep(.spreadsheet-row-even > td) {
+  background-color: var(--spreadsheet-row-even-bg, #f3f6f8);
+}
+
 .spreadsheet-header {
   position: relative;
+  text-align: center !important;
+  background-color: var(--spreadsheet-header-bg, #455a64);
+  color: var(--spreadsheet-header-color, #fff);
+  border-color: var(--spreadsheet-border-color, #b0bec5);
+}
+
+.spreadsheet-filter-row :deep(th) {
+  padding: 2px 4px;
 }
 
 .column-resizer {
@@ -159,8 +350,35 @@ onUnmounted(stopResize);
   cursor: col-resize;
   touch-action: none;
   user-select: none;
+  border-right: 2px solid var(--spreadsheet-resizer-color, #90a4ae);
 }
-:deep(.col--dummy) {
+
+.column-resizer:hover {
+  background-color: var(
+    --spreadsheet-resizer-hover-bg,
+    rgba(255, 235, 59, 0.35)
+  );
+  border-right-color: var(--spreadsheet-resizer-hover-color, #ffeb3b);
+}
+
+.q-table-spreadsheet :deep(.q-table th.col--index),
+.q-table-spreadsheet :deep(.q-table td.col--index) {
+  position: sticky;
+  left: 0;
+  width: 2.5rem;
+  min-width: 2.5rem;
+  max-width: 2.5rem;
+  box-sizing: border-box;
+  text-align: right;
+  padding-right: 0.75rem;
+  z-index: 2;
+}
+
+.q-table-spreadsheet :deep(.q-table thead th.col--index) {
+  z-index: 3;
+}
+
+.q-table-spreadsheet :deep(.col--dummy) {
   width: auto;
   min-width: 0;
   max-width: none;
