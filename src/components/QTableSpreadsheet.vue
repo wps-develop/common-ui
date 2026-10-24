@@ -333,7 +333,7 @@ onUnmounted(stopResize);
     :columns="tableColumns"
     :row-key="rowKey"
     :style="tableStyle"
-    :table-style="{ maxHeight: tableHeight }"
+    :table-style="{ height: tableHeight }"
     :table-row-class-fn="tableRowClassFn"
     :virtual-scroll-item-size="rowHeight"
     :rows-per-page-options="[0]"
