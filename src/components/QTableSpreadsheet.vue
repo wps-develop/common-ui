@@ -405,6 +405,12 @@ onUnmounted(stopResize);
   background-color: var(--spreadsheet-row-bg, #fff);
 }
 
+/* テーブルの境界線を独立させ、sticky時の描画ずれを防ぐ */
+.q-table-spreadsheet :deep(.q-table) {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
 /* データ行 */
 .q-table-spreadsheet :deep(.q-table tbody tr) {
   height: var(--spreadsheet-row-height, 24px);
