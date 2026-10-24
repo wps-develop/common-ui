@@ -398,12 +398,14 @@ onUnmounted(stopResize);
 </template>
 
 <style scoped>
+/* テーブル全体 */
 .q-table-spreadsheet {
   font-size: var(--spreadsheet-font-size, 0.75rem);
   color: var(--spreadsheet-text-color, #212121);
   background-color: var(--spreadsheet-row-bg, #fff);
 }
 
+/* データ行 */
 .q-table-spreadsheet :deep(.q-table tbody tr) {
   height: var(--spreadsheet-row-height, 24px);
 }
@@ -417,25 +419,46 @@ onUnmounted(stopResize);
   color: inherit;
 }
 
+/* 偶数行 */
 .q-table-spreadsheet :deep(.spreadsheet-row-even > td) {
   background-color: var(--spreadsheet-row-even-bg, #f3f6f8);
 }
 
+/* ヘッダ */
 .spreadsheet-header {
-  position: relative;
   text-align: center !important;
   background-color: var(--spreadsheet-header-bg, #455a64);
   color: var(--spreadsheet-header-color, #fff);
   border-color: var(--spreadsheet-border-color, #b0bec5);
 }
 
+/* ヘッダ行固定 */
+.q-table-spreadsheet :deep(thead tr:first-child th) {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+
+/* フィルタ行 */
 .spreadsheet-filter-row :deep(th) {
   padding: 2px 4px;
+  background-color: var(--spreadsheet-row-bg, #fff);
 }
+
+/* フィルタ入力欄 */
 .spreadsheet-filter-row :deep(.q-field--dense .q-field__control),
 .spreadsheet-filter-row :deep(.q-field--dense .q-field__marginal) {
   height: 28px;
 }
+
+/* フィルタ行固定 */
+.q-table-spreadsheet :deep(thead tr.spreadsheet-filter-row th) {
+  position: sticky;
+  top: 24px;
+  z-index: 4;
+}
+
+/* 列幅調整ハンドル */
 .column-resizer {
   position: absolute;
   top: 0;
@@ -456,6 +479,7 @@ onUnmounted(stopResize);
   border-right-color: var(--spreadsheet-resizer-hover-color, #ffeb3b);
 }
 
+/* 行番号列固定 */
 .q-table-spreadsheet :deep(.q-table th.col--index),
 .q-table-spreadsheet :deep(.q-table td.col--index) {
   position: sticky;
@@ -469,31 +493,15 @@ onUnmounted(stopResize);
   z-index: 2;
 }
 
+/* 行番号ヘッダは横・縦両方向に固定 */
 .q-table-spreadsheet :deep(.q-table thead th.col--index) {
-  z-index: 3;
+  z-index: 5;
 }
 
+/* 余白調整用ダミー列 */
 .q-table-spreadsheet :deep(.col--dummy) {
   width: auto;
   min-width: 0;
   max-width: none;
-}
-
-/* ヘッダ行を最上部に固定 */
-.q-table-spreadsheet :deep(.q-table thead tr:first-child th) {
-  position: sticky;
-  top: 0;
-  z-index: 4;
-}
-
-/* フィルタ行をヘッダの直下に固定 */
-.q-table-spreadsheet :deep(.q-table thead tr:nth-child(2) th) {
-  position: sticky;
-  top: 24px;
-  z-index: 4;
-}
-
-.q-table-spreadsheet :deep(.spreadsheet-filter-row th) {
-  background-color: var(--spreadsheet-row-bg, #fff);
 }
 </style>
