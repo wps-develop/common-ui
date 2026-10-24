@@ -478,4 +478,22 @@ onUnmounted(stopResize);
   min-width: 0;
   max-width: none;
 }
+
+/* ヘッダ行を最上部に固定 */
+.q-table-spreadsheet :deep(.q-table thead tr:first-child th) {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+
+/* フィルタ行をヘッダの直下に固定 */
+.q-table-spreadsheet :deep(.q-table thead tr:nth-child(2) th) {
+  position: sticky;
+  top: 24px;
+  z-index: 4;
+}
+
+.q-table-spreadsheet :deep(.spreadsheet-filter-row th) {
+  background-color: var(--spreadsheet-row-bg, #fff);
+}
 </style>
