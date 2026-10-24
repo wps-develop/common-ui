@@ -432,7 +432,10 @@ onUnmounted(stopResize);
 .spreadsheet-filter-row :deep(th) {
   padding: 2px 4px;
 }
-
+.spreadsheet-filter-row :deep(.q-field--dense .q-field__control),
+.spreadsheet-filter-row :deep(.q-field--dense .q-field__marginal) {
+  height: 28px;
+}
 .column-resizer {
   position: absolute;
   top: 0;
