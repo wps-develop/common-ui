@@ -460,7 +460,7 @@ onUnmounted(stopResize);
 /* フィルタ行固定 */
 .q-table-spreadsheet :deep(thead tr.spreadsheet-filter-row th) {
   position: sticky;
-  top: 24px;
+  top: 28px;
   z-index: 4;
 }
 
