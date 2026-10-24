@@ -6,5 +6,6 @@ export type QTableSpreadsheetColumn<
   width?: number;
   minWidth?: number;
   hasFilter?: boolean;
+  filterType?: "text" | "number";
   resizable?: boolean;
 };

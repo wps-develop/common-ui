@@ -27,7 +27,7 @@ const INDEX_COLUMN_NAME = "__row_index__";
 const DUMMY_COLUMN_NAME = "__spreadsheet_dummy__";
 
 const widths = ref<Record<string, number>>({});
-const filterValues = reactive<Record<string, string>>({});
+const filterValues = reactive<Record<string, string | null>>({});
 
 const tableStyle = computed<CSSProperties>(() => ({
   "--spreadsheet-row-height": `${props.rowHeight}px`,
@@ -38,6 +38,91 @@ const filterColumns = computed(() =>
 );
 
 const hasFilterRow = computed(() => filterColumns.value.length > 0);
+
+// 検索時の表記揺れを吸収する。
+// NFKCで全角・半角を統一し、カタカナをひらがなへ変換する。
+// 小さい仮名も通常の仮名と同一視する。
+const normalizeFilterText = (value: unknown): string => {
+  const text = String(value ?? "")
+    .normalize("NFKC")
+    .toLocaleLowerCase();
+
+  const hiragana = Array.from(text, (character) => {
+    const code = character.charCodeAt(0);
+
+    if (code >= 0x30a1 && code <= 0x30f6) {
+      return String.fromCharCode(code - 0x60);
+    }
+
+    return character;
+  }).join("");
+
+  return hiragana.replace(/[ぁぃぅぇぉっゃゅょゎゕゖ]/g, (character) => {
+    const smallKana = "ぁぃぅぇぉっゃゅょゎゕゖ";
+    const normalKana = "あいうえおつやゆよわかけ";
+    const index = smallKana.indexOf(character);
+
+    return normalKana[index] ?? character;
+  });
+};
+
+// 数値フィルタ。
+// 数値、比較演算子、範囲指定（100..500）に対応する。
+// 不正な入力は条件を適用しない。
+const matchesNumberFilter = (value: unknown, filter: string): boolean => {
+  const condition = filter.normalize("NFKC").trim();
+  if (!condition) return true;
+
+  const numericValue =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim() !== ""
+        ? Number(value)
+        : NaN;
+
+  const numberPattern = String.raw`[+-]?(?:\d+(?:\.\d*)?|\.\d+)`;
+
+  const rangePattern = new RegExp(
+    `^(${numberPattern})\\s*\\.\\.\\s*(${numberPattern})$`,
+  );
+
+  const rangeMatch = condition.match(rangePattern);
+
+  if (rangeMatch) {
+    const minimum = Number(rangeMatch[1]);
+    const maximum = Number(rangeMatch[2]);
+
+    if (!Number.isFinite(numericValue)) return false;
+
+    return numericValue >= minimum && numericValue <= maximum;
+  }
+
+  const comparisonPattern = new RegExp(
+    `^(>=|<=|>|<|=)?\\s*(${numberPattern})$`,
+  );
+
+  const comparisonMatch = condition.match(comparisonPattern);
+
+  if (!comparisonMatch) return true;
+
+  if (!Number.isFinite(numericValue)) return false;
+
+  const operator = comparisonMatch[1] ?? "=";
+  const target = Number(comparisonMatch[2]);
+
+  switch (operator) {
+    case ">=":
+      return numericValue >= target;
+    case "<=":
+      return numericValue <= target;
+    case ">":
+      return numericValue > target;
+    case "<":
+      return numericValue < target;
+    default:
+      return numericValue === target;
+  }
+};
 
 const getColumnValue = (
   column: QTableSpreadsheetColumn,
@@ -65,18 +150,25 @@ const tableRows = computed(() => {
   // 1. フィルタリング
   rows = rows.filter((row) => {
     for (const column of filterColumns.value) {
-      const keyword = (filterValues[column.name] ?? "")
-        .trim()
-        .toLocaleLowerCase();
+      const filter = (filterValues[column.name] ?? "").trim();
 
-      if (!keyword) continue;
+      if (!filter) continue;
 
       const value = getColumnValue(column, row);
-      const text = String(
-        column.format ? column.format(value, row) : (value ?? ""),
-      ).toLocaleLowerCase();
 
-      if (!text.includes(keyword)) {
+      if (column.filterType === "number") {
+        if (!matchesNumberFilter(value, filter)) {
+          return false;
+        }
+
+        continue;
+      }
+
+      const displayValue = column.format ? column.format(value, row) : value;
+
+      if (
+        !normalizeFilterText(displayValue).includes(normalizeFilterText(filter))
+      ) {
         return false;
       }
     }
@@ -86,7 +178,7 @@ const tableRows = computed(() => {
 
   // 2. ソート（今後実装）
 
-  // 3. フィルタリング・ソート後の表示順に行番号を付与
+  // 3. 表示順に行番号を付与
   return rows.map((row, index) => ({
     ...row,
     row_index: index + 1,
